@@ -1,0 +1,4 @@
+TRAIN: accuracy=99.87%
+VAL: accuracy=99.63%
+TEST: accuracy=99.61%
+ALL: accuracy=99.82%
