@@ -1,6 +1,7 @@
 import pathlib
 import polars as pl
 import subprocess
+import more_itertools
 
 from tempfile import NamedTemporaryFile
 
@@ -16,25 +17,28 @@ def move_files(
     dst_dir: pathlib.Path,
     file_paths_to_include: list[str]
 ) -> None:
-    with NamedTemporaryFile("w") as t_file:
-        file_paths_to_include_str = "\n".join(file_paths_to_include)
-        with open(t_file.name, "w") as f:
-            f.write(file_paths_to_include_str)
+    file_path_batches = more_itertools.batched(file_paths_to_include, n=1_000)
+    
+    for i, file_path_batch in enumerate(file_path_batches):
+        with NamedTemporaryFile("w") as t_file:
+            file_paths_to_include_str = "\n".join(file_path_batch)
+            with open(t_file.name, "w") as f:
+                f.write(file_paths_to_include_str)
 
-        cmd = [
-            "rclone",
-            "move",
-            str(src_dir),
-            str(dst_dir),
-            "--include-from",
-            t_file.name,
-            "--progress",
-            "--delete-empty-src-dirs"
-        ]
+            cmd = [
+                "rclone",
+                "move",
+                str(src_dir),
+                str(dst_dir),
+                "--include-from",
+                t_file.name,
+                "--progress",
+                "--delete-empty-src-dirs"
+            ]
 
-        print(f'Running command: {" ".join(cmd)}')
+            print(f'Batch [#{i}] - Running command: {" ".join(cmd)}')
 
-        subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True)
 
 
 def build_reidentification_train_test_split(animal: str) -> None:
@@ -68,4 +72,17 @@ def build_reidentification_train_test_split(animal: str) -> None:
     )
 
 
-build_reidentification_train_test_split("dog")
+ANIMALS = [
+    "degus",
+    "ferret",
+    "hamster",
+    "hedgehog",
+    "javasparrow",
+    "parakeet",
+    "pig",
+    "rabbit"
+]
+
+
+for animal in ANIMALS:
+    build_reidentification_train_test_split(animal)
