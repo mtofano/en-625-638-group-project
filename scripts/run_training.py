@@ -1,11 +1,14 @@
 import logging
 
-from petface.models.face_identification.res_net.v2 import get_reidentification_model
+from petface.models.face_identification.res_net.model import get_reidentification_model
 
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] - [%(name)s] %(message)s",
+)
 
 logger = logging.getLogger(__name__)
-
-logger.setLevel(logging.INFO)
 
 
 LOSSES: list[str] = [
@@ -40,16 +43,16 @@ def main(animals: list[str]) -> None:
 
 ANIMALS = [
     "chimp",
-    "guineapig",
-    "chinchilla",
-    "degus",
-    "ferret",
-    "hamster",
-    "hedgehog",
-    "javasparrow",
-    "parakeet",
-    "pig",
-    "rabbit"
+    # "guineapig",
+    # "chinchilla",
+    # "degus",
+    # "ferret",
+    # "hamster",
+    # "hedgehog",
+    # "javasparrow",
+    # "parakeet",
+    # "pig",
+    # "rabbit"
 ]
 
 

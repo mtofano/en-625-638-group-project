@@ -4,9 +4,12 @@ import logging
 from petface.const import ROOT_DIR
 
 
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] - [%(name)s] %(message)s",
+)
 
-logger.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 NOTEBOOK_PATH = ROOT_DIR / "notebooks" / "model_test_report.ipynb"
@@ -23,7 +26,7 @@ def main(animals: list[str]) -> None:
             pm.execute_notebook(
                 input_path=NOTEBOOK_PATH,
                 output_path=output_path,
-                parameters=dict(ANIMAL="chinchilla")
+                parameters=dict(ANIMAL=animal)
             )
         except Exception:
             logger.exception("Encounterd an error evaluating models")
