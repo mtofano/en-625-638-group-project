@@ -1,3 +1,13 @@
 .vscode/
+.idea/
+.env
 
 dataset/
+
+# pixi environments
+.pixi
+*.egg-info
+
+__pycache__/
+
+.checkpoints/
