@@ -3,9 +3,8 @@
 ResNet-18 with minority-focused sampling, class-conditional augmentation, early stopping,
 and **epoch-wise adaptive re-sampling** driven by a confusion matrix (default: from validation).
 
-- No argparse: everything is controlled by constants below.
 - Zero leakage: split per-record_id within each species folder.
-- No normalization (match your baseline); images assumed 224x224 RGB.
+- No normalization; images assumed 224x224 RGB.
 """
 
 from __future__ import annotations
@@ -62,7 +61,7 @@ EARLY_STOP_PATIENCE    = 7
 EARLY_STOP_DELTA       = 1e-4
 
 # ---- Optional confusion CSV (from a previous run) ----
-# (Not used for adaptation-in-epoch; kept for logging parity with your previous setup)
+# (Not used for adaptation-in-epoch; kept for logging parity with previous setup)
 CONFUSION_CSV          = None
 USE_CONFUSION_FOR_SAMPLING = False   # If True and CONFUSION_CSV exists, only affects initial epoch weights.
 
@@ -204,7 +203,7 @@ class ListImageDataset(Dataset):
 
 # --------- model ---------
 def build_model(num_classes: int) -> nn.Module:
-    m = resnet18(weights=None)              # from scratch to match your baseline
+    m = resnet18(weights=None)              # from scratch to match baseline
     m.fc = nn.Linear(m.fc.in_features, num_classes)
     return m
 
@@ -556,3 +555,4 @@ if __name__ == "__main__":
     except RuntimeError:
         pass
     main()
+
