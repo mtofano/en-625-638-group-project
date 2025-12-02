@@ -17,7 +17,11 @@ ANIMALS = [
     "cat"
 ]
 
+FORCE = False
 
 if __name__ == "__main__":
-    run_training.main(animals=ANIMALS)
+    run_training.main(animals=ANIMALS, force=FORCE)
     run_evaluation.main(animals=ANIMALS)
+
+
+# 12839
