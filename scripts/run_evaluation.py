@@ -26,7 +26,10 @@ def main(animals: list[str]) -> None:
             pm.execute_notebook(
                 input_path=NOTEBOOK_PATH,
                 output_path=output_path,
-                parameters=dict(ANIMAL=animal)
+                parameters=dict(ANIMAL=animal),
+                kernel_env={
+                    "PYTHONPATH": "/home/mtofano/src/en-625-638-group-project"
+                }
             )
         except Exception:
             logger.exception("Encounterd an error evaluating models")
@@ -44,7 +47,8 @@ ANIMALS = [
     "javasparrow",
     "parakeet",
     "pig",
-    "rabbit"
+    "rabbit",
+    "dog"
 ]
 
 

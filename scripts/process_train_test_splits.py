@@ -17,7 +17,7 @@ def move_files(
     dst_dir: pathlib.Path,
     file_paths_to_include: list[str]
 ) -> None:
-    file_path_batches = more_itertools.batched(file_paths_to_include, n=1_000)
+    file_path_batches = more_itertools.batched(file_paths_to_include, n=10_000)
     
     for i, file_path_batch in enumerate(file_path_batches):
         with NamedTemporaryFile("w") as t_file:
@@ -33,7 +33,13 @@ def move_files(
                 "--include-from",
                 t_file.name,
                 "--progress",
-                "--delete-empty-src-dirs"
+                "--delete-empty-src-dirs",
+                "--stats",
+                "1m",
+                "--transfers",
+                "24",
+                "--checkers",
+                "24"
             ]
 
             print(f'Batch [#{i}] - Running command: {" ".join(cmd)}')
@@ -84,5 +90,6 @@ ANIMALS = [
 ]
 
 
-for animal in ANIMALS:
-    build_reidentification_train_test_split(animal)
+if __name__ == "__main__":
+    for animal in ANIMALS:
+        build_reidentification_train_test_split(animal)
