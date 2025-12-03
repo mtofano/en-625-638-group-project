@@ -217,15 +217,10 @@ class ReidentModel(ABC):
 
     def process_inputs(self) -> tuple[tf.data.Dataset, tf.data.Dataset]:
         """
-        Optimize data pipeline for training efficiency.
-        
-        Prefetching allows the data pipeline to prepare the next batch while
-        the current batch is being processed, reducing training time.
+        Optimize data pipeline for training efficiency. Noop here but relevant
+        for similarity models.
         """
-        training_dataset = self.training_dataset.prefetch(tf.data.AUTOTUNE)  # type: ignore
-        validation_dataset = self.validation_dataset.prefetch(tf.data.AUTOTUNE)  # type: ignore
-
-        return training_dataset, validation_dataset
+        return self.training_dataset, self.validation_dataset
 
     def train(self) -> None:
         """
@@ -384,7 +379,7 @@ class ReidentModel(ABC):
         )
 
         fig.update_layout(
-            title="Training and Validation Metrics",
+            title=f"Training and Validation Metrics - {self.__class__.__name__}",
             xaxis_title="Epoch"
         )
 
@@ -528,65 +523,57 @@ class SimilarityModel(ReidentModel):
             outputs=self.classification_model.get_layer(index=-2).output  # Get embeddings before final layer
         )
 
-        # Collect all images and labels from training and validation (gallery)
-        train_images, train_labels = [], []
-        eval_images, eval_labels = [], []
+        gallery_embeddings = []
+        gallery_labels = []
 
-        # Training set becomes part of our reference gallery
-        for images, labels in self.training_dataset:  # type: ignore
-            train_images.append(images)
-            train_labels.append(labels)
+        for ds in [self.training_dataset, self.validation_dataset]:
+            for images, labels in ds:  # type: ignore
+                emb = embedding_model.predict(images)
+                gallery_embeddings.append(emb)
+                gallery_labels.append(labels.numpy())
 
-        # Validation set also becomes part of our reference gallery
-        for images, labels in self.validation_dataset:  # type: ignore
-            train_images.append(images)
-            train_labels.append(labels)
+        gallery_embeddings = np.concatenate(gallery_embeddings, axis=0)
+        gallery_labels = np.concatenate(gallery_labels, axis=0)
 
-        # Evaluation set contains our query images
-        for images, labels in evaluation_dataset:  # type: ignore
-            eval_images.append(images)
-            eval_labels.append(labels)
+        gallery_embeddings_norm = gallery_embeddings / np.linalg.norm(gallery_embeddings, axis=1, keepdims=True)
 
-        # Concatenate all batches
-        train_images = tf.concat(train_images, axis=0)  # type: ignore
-        train_labels = tf.concat(train_labels, axis=0).numpy()  # type: ignore
+        correct_top1 = 0
+        correct_top5 = 0
+        correct_top50 = 0
+        total = 0
 
-        eval_images = tf.concat(eval_images, axis=0)  # type: ignore
-        eval_labels = tf.concat(eval_labels, axis=0).numpy()  # type: ignore
+        for images, eval_labels in evaluation_dataset:  # type: ignore
+            eval_embeddings = embedding_model.predict(images)
+            eval_embeddings_norm = eval_embeddings / np.linalg.norm(eval_embeddings, axis=1, keepdims=True)
 
-        # Extract embeddings for gallery and queries
-        train_embeddings = embedding_model.predict(train_images)
-        eval_embeddings = embedding_model.predict(eval_images)
-
-        # Normalize embeddings for cosine similarity computation
-        train_embeddings_norm = train_embeddings / np.linalg.norm(train_embeddings, axis=1, keepdims=True)
-        eval_embeddings_norm = eval_embeddings / np.linalg.norm(eval_embeddings, axis=1, keepdims=True)
-
-        # Compute cosine similarity between all queries and gallery images
-        similarity_scores = np.dot(train_embeddings_norm, eval_embeddings_norm.transpose()).transpose()
+            # Compute cosine similarity between all queries and gallery images
+            similarity_scores = np.dot(gallery_embeddings_norm, eval_embeddings_norm.transpose()).transpose()
         
-        # Sort by similarity (descending order)
-        sorted_similarity_scores = np.argsort(similarity_scores, axis=1)[:, ::-1]
+            # Sort by similarity (descending order)
+            sorted_similarity_scores = np.argsort(similarity_scores, axis=1)[:, ::-1]
 
-        # Get top-k most similar images
-        top_1_indices = sorted_similarity_scores[:, :1]
-        top_5_indices = sorted_similarity_scores[:, :5]
-        top_50_indices = sorted_similarity_scores[:, :50]
+            # Get top-k most similar images
+            top_1_indices = sorted_similarity_scores[:, :1]
+            top_5_indices = sorted_similarity_scores[:, :5]
+            top_50_indices = sorted_similarity_scores[:, :50]
 
-        # Get labels of top-k similar images
-        top_1_labels = train_labels[top_1_indices]
-        top_5_labels = train_labels[top_5_indices]
-        top_50_labels = train_labels[top_50_indices]
+            # Get labels of top-k similar images
+            top_1_labels = gallery_labels[top_1_indices].squeeze()
+            top_5_labels = gallery_labels[top_5_indices]
+            top_50_labels = gallery_labels[top_50_indices]
 
-        # Calculate accuracy: does the correct label appear in top-k?
-        top_1_acc = np.sum(top_1_labels[:, 0] == eval_labels) / len(eval_labels)
-        top_5_acc = np.sum(np.any(top_5_labels == eval_labels[:, None], axis=1)) / len(eval_labels)
-        top_50_acc = np.sum(np.any(top_50_labels == eval_labels[:, None], axis=1)) / len(eval_labels)
+            eval_labels = eval_labels.numpy()
+
+            # Calculate accuracy: does the correct label appear in top-k?
+            correct_top1 += np.sum(top_1_labels == eval_labels)
+            correct_top5 += np.sum(np.any(top_5_labels == eval_labels[:, None], axis=1))
+            correct_top50 += np.sum(np.any(top_50_labels == eval_labels[:, None], axis=1))
+            total += len(eval_labels)
 
         return Evaluation(
-            top_1_accuracy=top_1_acc,
-            top_5_accuracy=top_5_acc,
-            top_50_accuracy=top_50_acc
+            top_1_accuracy=correct_top1 / total,
+            top_5_accuracy=correct_top5 / total,
+            top_50_accuracy=correct_top50 / total,
         )
 
 
@@ -736,60 +723,57 @@ class SimilarityArcfaceModel(ArcfaceTrainableModel):
         # Layer 1 is the embedding model (before the ArcFace layer)
         embedding_model = self.classification_model.layers[1]
 
-        # Collect gallery images (training + validation)
-        train_images, train_labels = [], []
-        eval_images, eval_labels = [], []
+        gallery_embeddings = []
+        gallery_labels = []
 
-        for images, labels in self.training_dataset:  # type: ignore
-            train_images.append(images)
-            train_labels.append(labels)
+        for ds in [self.training_dataset, self.validation_dataset]:
+            for images, labels in ds:  # type: ignore
+                emb = embedding_model.predict(images)
+                gallery_embeddings.append(emb)
+                gallery_labels.append(labels.numpy())
 
-        for images, labels in self.validation_dataset:  # type: ignore
-            train_images.append(images)
-            train_labels.append(labels)
+        gallery_embeddings = np.concatenate(gallery_embeddings, axis=0)
+        gallery_labels = np.concatenate(gallery_labels, axis=0)
 
-        # Collect query images (evaluation set)
-        for images, labels in evaluation_dataset:  # type: ignore
-            eval_images.append(images)
-            eval_labels.append(labels)
+        gallery_embeddings_norm = gallery_embeddings / np.linalg.norm(gallery_embeddings, axis=1, keepdims=True)
 
-        # Concatenate all batches
-        train_images = tf.concat(train_images, axis=0)  # type: ignore
-        train_labels = tf.concat(train_labels, axis=0).numpy()  # type: ignore
+        correct_top1 = 0
+        correct_top5 = 0
+        correct_top50 = 0
+        total = 0
 
-        eval_images = tf.concat(eval_images, axis=0)  # type: ignore
-        eval_labels = tf.concat(eval_labels, axis=0).numpy()  # type: ignore
+        for images, eval_labels in evaluation_dataset:  # type: ignore
+            eval_embeddings = embedding_model.predict(images)
+            eval_embeddings_norm = eval_embeddings / np.linalg.norm(eval_embeddings, axis=1, keepdims=True)
 
-        # Extract ArcFace-trained embeddings
-        train_embeddings = embedding_model.predict(train_images)
-        eval_embeddings = embedding_model.predict(eval_images)
+            # Compute cosine similarity between all queries and gallery images
+            similarity_scores = np.dot(gallery_embeddings_norm, eval_embeddings_norm.transpose()).transpose()
+        
+            # Sort by similarity (descending order)
+            sorted_similarity_scores = np.argsort(similarity_scores, axis=1)[:, ::-1]
 
-        # Normalize for cosine similarity
-        train_embeddings_norm = train_embeddings / np.linalg.norm(train_embeddings, axis=1, keepdims=True)
-        eval_embeddings_norm = eval_embeddings / np.linalg.norm(eval_embeddings, axis=1, keepdims=True)
+            # Get top-k most similar images
+            top_1_indices = sorted_similarity_scores[:, :1]
+            top_5_indices = sorted_similarity_scores[:, :5]
+            top_50_indices = sorted_similarity_scores[:, :50]
 
-        # Compute cosine similarity and rank results
-        similarity_scores = np.dot(train_embeddings_norm, eval_embeddings_norm.transpose()).transpose()
-        sorted_similarity_scores = np.argsort(similarity_scores, axis=1)[:, ::-1]
+            # Get labels of top-k similar images
+            top_1_labels = gallery_labels[top_1_indices].squeeze()
+            top_5_labels = gallery_labels[top_5_indices]
+            top_50_labels = gallery_labels[top_50_indices]
 
-        # Extract top-k matches
-        top_1_indices = sorted_similarity_scores[:, :1]
-        top_5_indices = sorted_similarity_scores[:, :5]
-        top_50_indices = sorted_similarity_scores[:, :50]
+            eval_labels = eval_labels.numpy()
 
-        top_1_labels = train_labels[top_1_indices]
-        top_5_labels = train_labels[top_5_indices]
-        top_50_labels = train_labels[top_50_indices]
-
-        # Calculate top-k accuracies
-        top_1_acc = np.sum(top_1_labels[:, 0] == eval_labels) / len(eval_labels)
-        top_5_acc = np.sum(np.any(top_5_labels == eval_labels[:, None], axis=1)) / len(eval_labels)
-        top_50_acc = np.sum(np.any(top_50_labels == eval_labels[:, None], axis=1)) / len(eval_labels)
+            # Calculate accuracy: does the correct label appear in top-k?
+            correct_top1 += np.sum(top_1_labels == eval_labels)
+            correct_top5 += np.sum(np.any(top_5_labels == eval_labels[:, None], axis=1))
+            correct_top50 += np.sum(np.any(top_50_labels == eval_labels[:, None], axis=1))
+            total += len(eval_labels)
 
         return Evaluation(
-            top_1_accuracy=top_1_acc,
-            top_5_accuracy=top_5_acc,
-            top_50_accuracy=top_50_acc
+            top_1_accuracy=correct_top1 / total,
+            top_5_accuracy=correct_top5 / total,
+            top_50_accuracy=correct_top50 / total,
         )
 
 
